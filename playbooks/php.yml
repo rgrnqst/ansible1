@@ -27,13 +27,13 @@
         state: latest
       when: ansible_os_family == "RedHat"
 
-    # CentOS-il tootab PHP httpd all php-fpm kaudu
+    # CentOS-il tootab PHP httpd all php-fpm kaudu (--check ajal vahele)
     - name: php-fpm kaivitamine (CentOS)
       ansible.builtin.service:
         name: php-fpm
         state: started
         enabled: true
-      when: ansible_os_family == "RedHat"
+      when: ansible_os_family == "RedHat" and not ansible_check_mode
 
     # Iseseisev ulesanne 1: info.php fail PHP kontrolliks brauseris
     - name: Loome info.php faili /var/www/html kataloogi
