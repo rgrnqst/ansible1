@@ -1,0 +1,49 @@
+---
+# Lab 3: Veebiserveri laiendamine PHP toega
+# Kontroll: ansible-playbook --check /root/playbooks/php.yml
+# Kaivitus: ansible-playbook /root/playbooks/php.yml
+# PHP 7 pole Debian 13 / CentOS 10 repos, seega state: latest paigaldab viimase PHP
+
+- name: PHP paigaldamine kliendiserveritesse
+  hosts: webservers
+  tasks:
+
+    # PHP + Apache moodul Debianil (modul apt)
+    - name: install php (Debian)
+      ansible.builtin.apt:
+        name:
+          - php
+          - libapache2-mod-php
+        state: latest
+        update_cache: true
+      when: ansible_os_family == "Debian"
+
+    # PHP + php-fpm CentOS-il (modul dnf)
+    - name: install php (CentOS)
+      ansible.builtin.dnf:
+        name:
+          - php
+          - php-fpm
+        state: latest
+      when: ansible_os_family == "RedHat"
+
+    # CentOS-il tootab PHP httpd all php-fpm kaudu
+    - name: php-fpm kaivitamine (CentOS)
+      ansible.builtin.service:
+        name: php-fpm
+        state: started
+        enabled: true
+      when: ansible_os_family == "RedHat"
+
+    # Iseseisev ulesanne 1: info.php fail PHP kontrolliks brauseris
+    - name: Loome info.php faili /var/www/html kataloogi
+      ansible.builtin.copy:
+        dest: /var/www/html/info.php
+        content: "<?php phpinfo(); ?>\n"
+        mode: "0644"
+
+    # Taaskaivitame veebiserveri, et PHP moodul laaditaks
+    - name: Apache restart
+      ansible.builtin.service:
+        name: "{{ 'apache2' if ansible_os_family == 'Debian' else 'httpd' }}"
+        state: restarted

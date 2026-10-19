@@ -1,0 +1,23 @@
+---
+# Lab 2 iseseisev ulesanne: unikaalne /var/www/html/index.html igal kliendil
+# Lehel on tervitus, kliendiserveri hostinimi ja IP-aadress (Ansible faktid)
+
+- name: Unikaalne vaikeleht igale kliendiserverile
+  hosts: webservers
+  tasks:
+
+    # Asendame Apache vaikelehe, sisu tuleb hosti faktidest
+    - name: Loome unikaalse index.html
+      ansible.builtin.copy:
+        dest: /var/www/html/index.html
+        mode: "0644"
+        content: |
+          <!DOCTYPE html>
+          <html>
+            <head><meta charset="utf-8"><title>{{ ansible_hostname }}</title></head>
+            <body>
+              <h1>Tere! See on {{ ansible_hostname }}</h1>
+              <p>IP-aadress: {{ ansible_default_ipv4.address }}</p>
+              <p>OS: {{ ansible_distribution }} {{ ansible_distribution_version }}</p>
+            </body>
+          </html>

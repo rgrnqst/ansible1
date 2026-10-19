@@ -1,0 +1,117 @@
+---
+# Lab 2: Apache2 veebiserveri paigaldamine ja halduse automatiseerimine
+# Sihtmasinad: grupp webservers (klient1 Debian 13, klient2 CentOS Stream 10)
+# Kontroll: ansible-playbook --check /root/playbooks/apache2.yml
+# Kaivitus: ansible-playbook /root/playbooks/apache2.yml
+
+- name: Apache2 paigaldamine ja userdir seadistamine
+  hosts: webservers
+  tasks:
+
+    # 1. Paigaldame Apache2 (Debianil pakett apache2, CentOS-il httpd)
+    - name: install apache2
+      ansible.builtin.apt:
+        name: apache2
+        state: latest
+        update_cache: true
+      when: ansible_os_family == "Debian"
+
+    - name: install httpd (CentOS)
+      ansible.builtin.dnf:
+        name: httpd
+        state: latest
+      when: ansible_os_family == "RedHat"
+
+    # CentOS-il kaivitame httpd ja avame tulemuuris http pordi
+    - name: httpd kaivitamine ja lubamine (CentOS)
+      ansible.builtin.service:
+        name: httpd
+        state: started
+        enabled: true
+      when: ansible_os_family == "RedHat"
+
+    - name: Avame tulemuuris http teenuse (CentOS)
+      ansible.posix.firewalld:
+        service: http
+        permanent: true
+        immediate: true
+        state: enabled
+      when: ansible_os_family == "RedHat"
+
+    # 2. Loome user-ile public_html kataloogi (modul file)
+    - name: Loome public_html kataloog user_ile
+      ansible.builtin.file:
+        path: /home/user/public_html
+        state: directory
+        owner: user
+        group: user
+        mode: "0755"
+
+    # Apache peab kodukaustast labi paasema (Debian 13 ja CentOS vaikimisi 0700)
+    - name: Kodukausta oigused 0711
+      ansible.builtin.file:
+        path: /home/user
+        mode: "0711"
+
+    # 3. Lubame userdir mooduli (Debianil modul apache2_module)
+    - name: Lubame userdir mod
+      community.general.apache2_module:
+        name: userdir
+        state: present
+      when: ansible_os_family == "Debian"
+
+    # CentOS-il lubatakse userdir failis userdir.conf
+    - name: Lubame userdir (CentOS, UserDir disabled valja)
+      ansible.builtin.lineinfile:
+        path: /etc/httpd/conf.d/userdir.conf
+        regexp: '^\s*UserDir disabled'
+        line: '    #UserDir disabled'
+      when: ansible_os_family == "RedHat"
+
+    - name: Lubame userdir (CentOS, UserDir public_html sisse)
+      ansible.builtin.lineinfile:
+        path: /etc/httpd/conf.d/userdir.conf
+        regexp: '^\s*#?UserDir public_html'
+        line: '    UserDir public_html'
+      when: ansible_os_family == "RedHat"
+
+    # CentOS SELinux: lubame kodulehed ja paneme oige konteksti
+    - name: SELinux httpd_enable_homedirs (CentOS)
+      ansible.posix.seboolean:
+        name: httpd_enable_homedirs
+        state: true
+        persistent: true
+      when: ansible_os_family == "RedHat"
+
+    # 4. Taaskaivitame Apache (modul service)
+    - name: Apache2 serverile alglaadimine(restart)
+      ansible.builtin.service:
+        name: "{{ 'apache2' if ansible_os_family == 'Debian' else 'httpd' }}"
+        state: restarted
+
+    # 5. Kopeerime testlehe user-i public_html kataloogi (modul copy)
+    - name: Kopeerime index.html fail USER_ile kodus_public_html kataloogi
+      ansible.builtin.copy:
+        src: files/index.html
+        dest: /home/user/public_html/index.html
+        owner: user
+        group: user
+        mode: "0644"
+
+    - name: SELinux kontekst public_html jaoks (CentOS)
+      ansible.builtin.command: restorecon -R /home/user/public_html
+      changed_when: false
+      when: ansible_os_family == "RedHat"
+
+    # 6. Teeme user-i kodulehe "oma parase" (modul lineinfile)
+    - name: user index.html redigeerimine
+      ansible.builtin.lineinfile:
+        path: /home/user/public_html/index.html
+        regexp: 'Apache2 Default Page'
+        line: '    <h1>USERi lehekylg ({{ ansible_hostname }})</h1>'
+
+    # Taaskaivitame Apache ka lopus
+    - name: Apache2 restart lopus
+      ansible.builtin.service:
+        name: "{{ 'apache2' if ansible_os_family == 'Debian' else 'httpd' }}"
+        state: restarted

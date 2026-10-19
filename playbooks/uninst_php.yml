@@ -1,0 +1,41 @@
+---
+# Lab 3 iseseisev ulesanne 2: PHP eemaldamine kliendiserveritest
+# Kasitsi eemaldamise kasud (vale PHP versiooni korral):
+#   apt-get purge php7.*
+#   apt-get purge php7.X-common
+#   apt remove php7.X*
+# Parast testimist taasta PHP: ansible-playbook /root/playbooks/php.yml
+
+- name: PHP eemaldamine kliendiserveritest
+  hosts: webservers
+  tasks:
+
+    # Debian: eemaldame koik php paketid koos seadistustega (purge)
+    - name: Eemaldame PHP paketid (Debian)
+      ansible.builtin.apt:
+        name:
+          - "php*"
+          - "libapache2-mod-php*"
+        state: absent
+        purge: true
+        autoremove: true
+      when: ansible_os_family == "Debian"
+
+    # CentOS: eemaldame php paketid (modul dnf)
+    - name: Eemaldame PHP paketid (CentOS)
+      ansible.builtin.dnf:
+        name: "php*"
+        state: absent
+        autoremove: true
+      when: ansible_os_family == "RedHat"
+
+    # info.php pole ilma PHP-ta vajalik
+    - name: Eemaldame info.php
+      ansible.builtin.file:
+        path: /var/www/html/info.php
+        state: absent
+
+    - name: Apache restart
+      ansible.builtin.service:
+        name: "{{ 'apache2' if ansible_os_family == 'Debian' else 'httpd' }}"
+        state: restarted
