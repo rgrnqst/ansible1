@@ -1,0 +1,52 @@
+---
+# Lab 4: MySQL serveri paigaldamine ametlikust MySQL APT hoidlast
+# Kontroll: ansible-playbook --check /root/playbooks/mysql-server.yml
+# Kaivitus: ansible-playbook /root/playbooks/mysql-server.yml
+# Ainult Debiani klient (grupp debian)
+
+- name: MySQL serveri paigaldamine kliendiserverisse
+  hosts: debian
+  vars:
+    mysql_apt_deb: mysql-apt-config_0.8.40-1_all.deb
+  tasks:
+
+    # Kataloog allalaaditud failide jaoks (modul file)
+    - name: Loome allalaaditud kataloog
+      ansible.builtin.file:
+        path: /root/allalaadimised
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # MySQL ametliku APT hoidla seadistuspakett (modul shell, wget)
+    - name: Laadime MySQL APT paketi wget abil
+      ansible.builtin.shell: wget -q -O /root/allalaadimised/{{ mysql_apt_deb }} https://dev.mysql.com/get/{{ mysql_apt_deb }}
+      args:
+        creates: /root/allalaadimised/{{ mysql_apt_deb }}
+
+    # gnupg on vajalik hoidla GPG votmete kasitlemiseks
+    - name: Paigalda gnupg
+      ansible.builtin.apt:
+        name: gnupg
+        state: present
+
+    # .deb pakett lisab MySQL hoidla apt allikatesse
+    - name: Installeerime mysql repositoorium
+      ansible.builtin.apt:
+        deb: /root/allalaadimised/{{ mysql_apt_deb }}
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    # Pakettide nimekiri uuendatakse, et MySQL hoidla paketid oleksid naha
+    - name: Teeme apt-le update
+      ansible.builtin.apt:
+        update_cache: true
+
+    # MySQL serveri paigaldus ilma dialoogita
+    - name: Paigaldame mysql-server
+      ansible.builtin.apt:
+        name: mysql-server
+        state: present
+      environment:
+        DEBIAN_FRONTEND: noninteractive

@@ -1,0 +1,60 @@
+---
+# Lab 4 iseseisev ulesanne: MySQL root kasutajale parool ja fail /root/.my.cnf
+# Kaivitus: ansible-playbook /root/playbooks/mysql-user.yml
+
+- name: MySQL root kasutaja seadistamine
+  hosts: debian
+  vars:
+    mysql_root_password: qwerty
+  tasks:
+
+    # Ansible mysql moodulid vajavad kliendis Pythoni PyMySQL teeki
+    - name: Paigaldame python3-pymysql
+      ansible.builtin.apt:
+        name: python3-pymysql
+        state: present
+
+    # root@localhost saab parooli (caching_sha2_password)
+    # check_implicit_admin: esimesel korral ilma paroolita, hiljem parooliga
+    - name: Maarame root kasutajale parooli
+      community.mysql.mysql_user:
+        name: root
+        host: localhost
+        plugin: caching_sha2_password
+        plugin_auth_string: "{{ mysql_root_password }}"
+        check_implicit_admin: true
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        state: present
+
+    # Uhenduse andmed failis, mida saab lugeda ainult root
+    - name: Loome faili /root/.my.cnf
+      ansible.builtin.copy:
+        dest: /root/.my.cnf
+        content: |
+          [client]
+          user=root
+          password={{ mysql_root_password }}
+        owner: root
+        group: root
+        mode: "0600"
+
+    # Kontroll 1: ilma paroolita sisselogimine peab ebaonnestuma
+    - name: Proovime sisse logida ilma paroolita
+      ansible.builtin.command: mysql --no-defaults -u root -e "SELECT 1"
+      register: ilma_paroolita
+      failed_when: ilma_paroolita.rc == 0
+      changed_when: false
+
+    # Kontroll 2: /root/.my.cnf abil sisselogimine peab onnestuma
+    - name: Logime sisse /root/.my.cnf abil
+      ansible.builtin.command: mysql -e "SELECT CURRENT_USER()"
+      register: my_cnf
+      changed_when: false
+
+    - name: Kontrolli tulemus
+      ansible.builtin.debug:
+        msg:
+          - "Ilma paroolita: {{ ilma_paroolita.stderr }}"
+          - "Parooliga: {{ my_cnf.stdout_lines | last }}"

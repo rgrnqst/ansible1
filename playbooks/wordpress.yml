@@ -1,0 +1,130 @@
+---
+# Lab 5: WordPressi paigaldamine ja seadistamine Ansible playbookiga
+# Eeldus: MySQL server ja /root/.my.cnf (mysql-server.yml, mysql-user.yml)
+# Kontroll: ansible-playbook --check /root/playbooks/wordpress.yml
+# Kaivitus: ansible-playbook /root/playbooks/wordpress.yml
+
+- name: WordPressi paigaldamine kliendiserverisse
+  hosts: debian
+  vars:
+    wp_db: wpdatabase
+    wp_user: wpuser
+    wp_password: qwerty
+    wp_dir: /var/www/html/wordpress
+  tasks:
+
+    # mysql_db ja mysql_user moodulid vajavad kliendis PyMySQL teeki
+    - name: Paigaldame python3-pymysql
+      ansible.builtin.apt:
+        name: python3-pymysql
+        state: present
+
+    # Andmebaas WordPressi jaoks, root andmed loetakse failist /root/.my.cnf
+    - name: Loome andmebaas nimega-wpdatabase
+      community.mysql.mysql_db:
+        name: "{{ wp_db }}"
+        state: present
+
+    # Eraldi kasutaja, kellel on oigused ainult andmebaasile wpdatabase
+    # MySQL 8.4 ei laadi mysql_native_password pluginat, seega caching_sha2_password
+    - name: Loome kasutaja nimega-wpuser parool-qwerty
+      community.mysql.mysql_user:
+        name: "{{ wp_user }}"
+        plugin: caching_sha2_password
+        plugin_auth_string: "{{ wp_password }}"
+        host: localhost
+        priv: "{{ wp_db }}.*:ALL"
+        column_case_sensitive: false
+        state: present
+
+    # WordPressi viimane versioon ametlikult kodulehelt (tar.gz)
+    - name: Laeme alla WordPressi
+      ansible.builtin.get_url:
+        url: https://wordpress.org/latest.tar.gz
+        dest: /root/allalaadimised/wordpress.tar.gz
+        mode: "0644"
+
+    # Arhiiv pakitakse lahti /var/www/html alla, tekib kataloog wordpress
+    - name: Pakkime WordPressi lahti
+      ansible.builtin.unarchive:
+        src: /root/allalaadimised/wordpress.tar.gz
+        dest: /var/www/html
+        remote_src: true
+        owner: www-data
+        group: www-data
+        creates: "{{ wp_dir }}/wp-config-sample.php"
+
+    # wp-config.php tehakse naidisfailist, force: false ei kirjuta olemasolevat ule
+    - name: Kopeerime wp-config-sample.php failiks wp-config.php
+      ansible.builtin.copy:
+        src: "{{ wp_dir }}/wp-config-sample.php"
+        dest: "{{ wp_dir }}/wp-config.php"
+        remote_src: true
+        force: false
+        owner: www-data
+        group: www-data
+        mode: "0640"
+
+    # lineinfile asendab read database_name_here, username_here ja password_here
+    - name: Maarame andmebaasi nime (wpdatabase)
+      ansible.builtin.lineinfile:
+        path: "{{ wp_dir }}/wp-config.php"
+        regexp: "^define\\( 'DB_NAME'"
+        line: "define( 'DB_NAME', '{{ wp_db }}' );"
+
+    - name: Maarame andmebaasi kasutaja (wpuser)
+      ansible.builtin.lineinfile:
+        path: "{{ wp_dir }}/wp-config.php"
+        regexp: "^define\\( 'DB_USER'"
+        line: "define( 'DB_USER', '{{ wp_user }}' );"
+
+    - name: Maarame andmebaasi parooli
+      ansible.builtin.lineinfile:
+        path: "{{ wp_dir }}/wp-config.php"
+        regexp: "^define\\( 'DB_PASSWORD'"
+        line: "define( 'DB_PASSWORD', '{{ wp_password }}' );"
+
+    # Iseseisev ulesanne 1: PHP MySQL laiendus (mysqli), versioon vastab PHP 8.4-le
+    - name: Paigaldame php8.4-mysql
+      ansible.builtin.apt:
+        name: php8.4-mysql
+        state: present
+      tags: iseseisev1
+
+    # Apache taaskaivitus, et PHP laiendus laaditaks
+    - name: Taaskaivitame Apache teenus
+      ansible.builtin.service:
+        name: apache2
+        state: restarted
+
+    # Iseseisev ulesanne 2: WP-CLI tooriist kataloogi /usr/local/bin
+    - name: Laeme alla wp-cli
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+        dest: /usr/local/bin/wp
+        mode: "0755"
+      tags: iseseisev2
+
+    # Kontroll, kas WordPress on juba paigaldatud (rc 0 = jah)
+    - name: Kontrollime, kas WordPress on paigaldatud
+      ansible.builtin.command: wp core is-installed --allow-root
+      args:
+        chdir: "{{ wp_dir }}"
+      register: wp_olek
+      failed_when: false
+      changed_when: false
+      check_mode: false
+      tags: iseseisev2
+
+    # Paigalduse lopetamine: saidi aadress, pealkiri ja admin kasutaja
+    - name: Paigaldame WordPressi (wp core install)
+      ansible.builtin.command: >
+        wp core install --allow-root
+        --url=http://{{ ansible_host }}/wordpress
+        --title="admin wordpressi sait"
+        --admin_user=admin --admin_password=qwerty
+        --admin_email=admin@example.com --skip-email
+      args:
+        chdir: "{{ wp_dir }}"
+      when: wp_olek.rc | default(1) != 0
+      tags: iseseisev2

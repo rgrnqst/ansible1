@@ -1,6 +1,6 @@
 # Ansible inventory - hallatavad kliendiserverid
 [webservers]
-klient1 ansible_host=192.168.33.160 ansible_user=root
+klient1 ansible_host=192.168.38.253 ansible_user=root
 klient2 ansible_host=192.168.33.155 ansible_user=root
 
 [debian]
